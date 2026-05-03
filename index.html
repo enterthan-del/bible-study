@@ -1,22 +1,23 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>플래시카드 프로</title>
-    
+
     <!-- PWA Settings -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#4f46e5">
-    
+
     <!-- CSS -->
     <link rel="stylesheet" href="style.css">
-    
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
+
     <!-- Libraries -->
     <!-- PapaParse for CSV parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -26,6 +27,7 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
+
 <body class="light-mode">
     <div id="app">
         <!-- Header -->
@@ -43,7 +45,7 @@
 
         <!-- Main Content Area -->
         <main id="mainContent">
-            
+
             <!-- VIEW: Deck List (Home) -->
             <section id="view-decks" class="view active">
                 <div class="view-header">
@@ -52,12 +54,30 @@
                         <button id="btnCreateDeck" class="btn primary">새 덱 만들기</button>
                     </div>
                 </div>
-                
+
                 <!-- Deck Grid -->
                 <div class="deck-grid" id="deckListContainer">
                     <!-- Decks will be injected here via JS -->
                 </div>
-                
+
+                <div class="view-header mt-8">
+                    <h2>전체 학습 통계</h2>
+                </div>
+                <div class="stats-dashboard card-panel mb-6" id="globalStatsContainer">
+                    <div class="stat-item">
+                        <span class="stat-value" id="globalStatCards">0</span>
+                        <span class="stat-label">오늘 학습한 카드</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="globalStatTotal">0</span>
+                        <span class="stat-label">누적 학습 횟수</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value" id="globalStatAccuracy">0%</span>
+                        <span class="stat-label">평균 정답률</span>
+                    </div>
+                </div>
+
                 <div class="view-header mt-8">
                     <h2>데이터 관리</h2>
                 </div>
@@ -72,7 +92,7 @@
                             <button id="btnExportCsv" class="btn outline">
                                 <i data-lucide="file-spreadsheet"></i> CSV 내보내기
                             </button>
-                            
+
                             <button id="btnExportAll" class="btn outline">
                                 <i data-lucide="download"></i> 전체 백업 (JSON)
                             </button>
@@ -98,15 +118,18 @@
                         <button id="btnStudyDeck" class="btn primary">
                             <i data-lucide="play"></i> 대기 학습
                         </button>
-                        <button id="btnStudyAllDeck" class="btn secondary">
-                            <i data-lucide="repeat"></i> 전체 복습
+                        <button id="btnStudyAllDeck" class="btn secondary" title="순서대로 복습">
+                            <i data-lucide="repeat"></i> 순차 복습
+                        </button>
+                        <button id="btnStudyRandomDeck" class="btn secondary" title="랜덤으로 섞어서 복습">
+                            <i data-lucide="shuffle"></i> 랜덤 복습
                         </button>
                         <button id="btnExportPdf" class="btn outline">
                             <i data-lucide="file-text"></i> PDF 출력
                         </button>
                     </div>
                 </div>
-                
+
                 <!-- Deck Statistics Summary -->
                 <div class="stats-summary card-panel mb-6">
                     <div class="stat-item">
@@ -127,7 +150,7 @@
                     <h3>카드 목록</h3>
                     <button id="btnAddCard" class="btn outline small">카드 추가</button>
                 </div>
-                
+
                 <div class="card-list" id="cardListContainer">
                     <!-- Cards will be injected here -->
                 </div>
@@ -145,7 +168,10 @@
                             <div class="progress-bar-fill" id="studyProgressBar"></div>
                         </div>
                     </div>
-                    <div class="study-actions">
+                    <div class="study-actions" style="display:flex; gap:0.5rem;">
+                        <button id="btnToggleAutoPlay" class="icon-btn" aria-label="자동 재생" title="자동 재생 시작">
+                            <i data-lucide="play-circle" id="autoPlayIcon"></i>
+                        </button>
                         <button id="btnToggleReverse" class="icon-btn" aria-label="리버스 모드" title="리버스 모드 (뒷면 먼저 보기)">
                             <i data-lucide="refresh-cw"></i>
                         </button>
@@ -179,7 +205,7 @@
                 <!-- Study Controls -->
                 <div class="study-controls">
                     <button id="btnShowAnswer" class="btn primary full-width">정답 보기</button>
-                    
+
                     <div id="srsControls" class="srs-controls hidden">
                         <button class="btn srs-btn btn-again" data-score="0">
                             <span class="label">다시 (1분)</span>
@@ -267,7 +293,8 @@
                 </div>
                 <div class="form-group">
                     <label for="pdfLayoutSelect">출력 레이아웃 선택</label>
-                    <select id="pdfLayoutSelect" style="width:100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: inherit; font-size: 1rem;">
+                    <select id="pdfLayoutSelect"
+                        style="width:100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: inherit; font-size: 1rem;">
                         <option value="8">8장 / 페이지 (모아 찍기)</option>
                         <option value="1">1장 / 페이지 (크게 보기)</option>
                     </select>
@@ -290,7 +317,8 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label>내보낼 덱 선택 (다중 선택 가능)</label>
-                    <div id="csvDeckSelection" style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; border-radius: var(--radius-sm);">
+                    <div id="csvDeckSelection"
+                        style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; border-radius: var(--radius-sm);">
                         <!-- checkboxes -->
                     </div>
                 </div>
@@ -307,4 +335,5 @@
 
     <script src="app.js"></script>
 </body>
+
 </html>

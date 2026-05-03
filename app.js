@@ -1,8 +1,13 @@
-// App State
 let appData = {
     decks: [],
     settings: {
         theme: 'light'
+    },
+    statistics: {
+        daily: {},
+        totalCardsStudied: 0,
+        totalCorrect: 0,
+        totalAttempts: 0
     }
 };
 
@@ -10,6 +15,8 @@ let currentDeckId = null;
 let currentStudyCards = [];
 let currentStudyIndex = 0;
 let isReversed = false;
+let isAutoPlay = false;
+let autoPlayTimer = null;
 
 // DOM Elements
 const views = {
@@ -22,8 +29,13 @@ const views = {
 document.addEventListener('DOMContentLoaded', () => {
     lucide.createIcons();
     loadData();
+    // Initialize statistics if missing from old data
+    if (!appData.statistics) {
+        appData.statistics = { daily: {}, totalCardsStudied: 0, totalCorrect: 0, totalAttempts: 0 };
+    }
     setupEventListeners();
     renderDeckList();
+    renderGlobalStats();
     applyTheme(appData.settings.theme);
 });
 
@@ -86,7 +98,8 @@ function setupEventListeners() {
     
     // Study
     document.getElementById('btnStudyDeck').addEventListener('click', startStudySession);
-    document.getElementById('btnStudyAllDeck').addEventListener('click', startStudyAllSession);
+    document.getElementById('btnStudyAllDeck').addEventListener('click', () => startStudyAllSession(false));
+    document.getElementById('btnStudyRandomDeck').addEventListener('click', () => startStudyAllSession(true));
     document.getElementById('activeFlashcard').addEventListener('click', flipCard);
     document.getElementById('btnShowAnswer').addEventListener('click', showAnswer);
     
@@ -98,6 +111,7 @@ function setupEventListeners() {
     });
 
     document.getElementById('btnToggleReverse').addEventListener('click', toggleReverseMode);
+    document.getElementById('btnToggleAutoPlay').addEventListener('click', toggleAutoPlay);
     
     // TTS
     document.querySelector('.tts-front').addEventListener('click', (e) => {
@@ -148,8 +162,14 @@ function setupEventListeners() {
 function switchView(viewId) {
     Object.values(views).forEach(v => v.classList.add('hidden'));
     
+    // Stop autoplay when leaving study view
+    if (viewId !== 'study') {
+        stopAutoPlay();
+    }
+    
     if (viewId === 'decks') {
         renderDeckList();
+        renderGlobalStats();
         views.decks.classList.remove('hidden');
         currentDeckId = null;
     } else if (viewId === 'deckDetails') {
@@ -380,7 +400,7 @@ function startStudySession() {
     renderCurrentCard();
 }
 
-function startStudyAllSession() {
+function startStudyAllSession(isRandom) {
     const deck = appData.decks.find(d => d.id === currentDeckId);
     if (!deck) return;
     
@@ -390,8 +410,9 @@ function startStudyAllSession() {
         return alert('학습할 카드가 없습니다.');
     }
     
-    // Shuffle cards
-    currentStudyCards.sort(() => Math.random() - 0.5);
+    if (isRandom) {
+        currentStudyCards.sort(() => Math.random() - 0.5);
+    }
     currentStudyIndex = 0;
     isReversed = false;
     document.getElementById('btnToggleReverse').style.color = 'inherit';
@@ -441,16 +462,33 @@ function renderCurrentCard() {
     
     const progressPercent = ((currentStudyIndex) / currentStudyCards.length) * 100;
     document.getElementById('studyProgressBar').style.width = `${progressPercent}%`;
+    
+    // AutoPlay Logic
+    if (isAutoPlay) {
+        autoPlayTimer = setTimeout(() => {
+            if (!document.getElementById('activeFlashcard').classList.contains('is-flipped')) {
+                showAnswer();
+                autoPlayTimer = setTimeout(() => {
+                    // Bypass SRS and just go to next card
+                    currentStudyIndex++;
+                    renderCurrentCard();
+                }, 3000); // Wait 3s after showing answer
+            }
+        }, 3000); // Wait 3s to read question
+    }
 }
 
 function flipCard() {
+    if (isAutoPlay) return; // Prevent manual flip during autoplay
     document.getElementById('activeFlashcard').classList.toggle('is-flipped');
 }
 
 function showAnswer() {
     document.getElementById('activeFlashcard').classList.add('is-flipped');
     document.getElementById('btnShowAnswer').classList.add('hidden');
-    document.getElementById('srsControls').classList.remove('hidden');
+    if (!isAutoPlay) {
+        document.getElementById('srsControls').classList.remove('hidden');
+    }
 }
 
 function handleSrsAnswer(score) {
@@ -458,9 +496,21 @@ function handleSrsAnswer(score) {
     let srs = card.srs;
     let stats = card.stats || { correct: 0, incorrect: 0 };
     
+    // Global stats update
+    const today = new Date().toISOString().split('T')[0];
+    appData.statistics.daily[today] = (appData.statistics.daily[today] || 0) + 1;
+    appData.statistics.totalCardsStudied++;
+    appData.statistics.totalAttempts++;
+    
     // Update Stats
-    if (score >= 2) stats.correct++;
-    else stats.incorrect++;
+    if (score >= 2) {
+        stats.correct++;
+        appData.statistics.totalCorrect++;
+    } else {
+        stats.incorrect++;
+        // If "Again" or "Hard", push the card to the end of the session to review it again later today
+        currentStudyCards.push(card);
+    }
     card.stats = stats;
     
     // SM-2 Algorithm Implementation
@@ -484,13 +534,57 @@ function handleSrsAnswer(score) {
     
     // Save to global data
     const deck = appData.decks.find(d => d.id === currentDeckId);
-    const cardIndexInDeck = deck.cards.findIndex(c => c.id === card.id);
-    deck.cards[cardIndexInDeck] = card;
+    if (deck) {
+        const cardIndexInDeck = deck.cards.findIndex(c => c.id === card.id);
+        if (cardIndexInDeck > -1) {
+            deck.cards[cardIndexInDeck] = card;
+        }
+    }
     saveData();
     
     // Next Card
     currentStudyIndex++;
     renderCurrentCard();
+}
+
+function toggleAutoPlay() {
+    isAutoPlay = !isAutoPlay;
+    const icon = document.getElementById('autoPlayIcon');
+    if (isAutoPlay) {
+        icon.setAttribute('data-lucide', 'pause-circle');
+        document.getElementById('btnToggleAutoPlay').style.color = 'var(--primary)';
+        lucide.createIcons();
+        renderCurrentCard(); // trigger autoplay loop
+    } else {
+        stopAutoPlay();
+    }
+}
+
+function stopAutoPlay() {
+    isAutoPlay = false;
+    const icon = document.getElementById('autoPlayIcon');
+    if (icon) {
+        icon.setAttribute('data-lucide', 'play-circle');
+        document.getElementById('btnToggleAutoPlay').style.color = 'inherit';
+        lucide.createIcons();
+    }
+    if (autoPlayTimer) {
+        clearTimeout(autoPlayTimer);
+        autoPlayTimer = null;
+    }
+}
+
+function renderGlobalStats() {
+    const today = new Date().toISOString().split('T')[0];
+    const todayCount = appData.statistics.daily[today] || 0;
+    
+    const accuracy = appData.statistics.totalAttempts > 0 
+        ? Math.round((appData.statistics.totalCorrect / appData.statistics.totalAttempts) * 100) 
+        : 0;
+        
+    document.getElementById('globalStatCards').innerText = todayCount;
+    document.getElementById('globalStatTotal').innerText = appData.statistics.totalCardsStudied;
+    document.getElementById('globalStatAccuracy').innerText = `${accuracy}%`;
 }
 
 // ==========================================
